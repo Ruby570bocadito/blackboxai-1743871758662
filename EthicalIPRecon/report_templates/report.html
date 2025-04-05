@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EthicalIPRecon Report - {{ target }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
+    <style>
+        .risk-low { background-color: #4ade80; }
+        .risk-medium { background-color: #fbbf24; }
+        .risk-high { background-color: #f87171; }
+        #map { height: 300px; }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <header class="mb-8 border-b pb-6">
+            <h1 class="text-3xl font-bold text-gray-800">EthicalIPRecon Report</h1>
+            <div class="flex justify-between items-center mt-2">
+                <p class="text-gray-600">Target: <span class="font-mono">{{ target }}</span></p>
+                <p class="text-gray-600">Generated: {{ timestamp }}</p>
+            </div>
+        </header>
+
+        <!-- Executive Summary -->
+        <section class="mb-8 bg-white rounded-lg shadow p-6">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">Executive Summary</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-blue-50 p-4 rounded-lg">
+                    <h3 class="font-medium text-blue-800">IP Information</h3>
+                    <p class="mt-2 text-sm">
+                        <span class="font-semibold">Location:</span> {{ geoip.city }}, {{ geoip.country }}<br>
+                        <span class="font-semibold">ISP:</span> {{ whois.registrar|default('Unknown') }}
+                    </p>
+                </div>
+                <div class="bg-yellow-50 p-4 rounded-lg">
+                    <h3 class="font-medium text-yellow-800">Security Assessment</h3>
+                    <p class="mt-2 text-sm">
+                        <span class="font-semibold">Abuse Score:</span> {{ reputation.abuseipdb.abuseConfidenceScore }}%<br>
+                        <span class="font-semibold">Malicious Flags:</span> {{ reputation.virustotal.last_analysis_stats.malicious }}
+                    </p>
+                </div>
+                <div class="bg-red-50 p-4 rounded-lg">
+                    <h3 class="font-medium text-red-800">Risk Level</h3>
+                    <div class="mt-2">
+                        <span class="px-3 py-1 rounded-full text-xs font-medium 
+                            {% if reputation.abuseipdb.abuseConfidenceScore > 70 %}risk-high
+                            {% elif reputation.abuseipdb.abuseConfidenceScore > 30 %}risk-medium
+                            {% else %}risk-low{% endif %}">
+                            {% if reputation.abuseipdb.abuseConfidenceScore > 70 %}High
+                            {% elif reputation.abuseipdb.abuseConfidenceScore > 30 %}Medium
+                            {% else %}Low{% endif %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Detailed Findings -->
+        <section class="mb-8">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">Detailed Findings</h2>
+            
+            <!-- Whois Information -->
+            <div class="bg-white rounded-lg shadow p-6 mb-6">
+                <h3 class="font-medium text-lg mb-3">WHOIS Information</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-sm"><span class="font-semibold">Registrar:</span> {{ whois.registrar|default('Unknown') }}</p>
+                        <p class="text-sm"><span class="font-semibold">Created:</span> {{ whois.creation_date|default('Unknown') }}</p>
+                        <p class="text-sm"><span class="font-semibold">Expires:</span> {{ whois.expiration_date|default('Unknown') }}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm font-semibold">Name Servers:</p>
+                        <ul class="list-disc list-inside text-sm">
+                            {% for ns in whois.name_servers %}
+                            <li>{{ ns }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- GeoIP Information -->
+            <div class="bg-white rounded-lg shadow p-6 mb-6">
+                <h3 class="font-medium text-lg mb-3">Geographic Information</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-sm"><span class="font-semibold">Location:</span> {{ geoip.city }}, {{ geoip.country }}</p>
+                        <p class="text-sm"><span class="font-semibold">Coordinates:</span> {{ geoip.latitude }}, {{ geoip.longitude }}</p>
+                        <p class="text-sm"><span class="font-semibold">Postal Code:</span> {{ geoip.postal|default('Unknown') }}</p>
+                        <p class="text-sm"><span class="font-semibold">Timezone:</span> {{ geoip.timezone|default('Unknown') }}</p>
+                    </div>
+                    <div id="map"></div>
+                </div>
+            </div>
+
+            <!-- DNS Information -->
+            <div class="bg-white rounded-lg shadow p-6 mb-6">
+                <h3 class="font-medium text-lg mb-3">DNS Information</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-sm font-semibold">Forward Lookup:</p>
+                        <p class="text-sm">{{ dns.forward|default('Unknown') }}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm font-semibold">Reverse Lookup:</p>
+                        <ul class="list-disc list-inside text-sm">
+                            {% for ptr in dns.reverse %}
+                            <li>{{ ptr }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Reputation Information -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="font-medium text-lg mb-3">Reputation Information</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <h4 class="font-medium mb-2">VirusTotal</h4>
+                        <p class="text-sm"><span class="font-semibold">Malicious:</span> {{ reputation.virustotal.last_analysis_stats.malicious }}</p>
+                        <p class="text-sm"><span class="font-semibold">Suspicious:</span> {{ reputation.virustotal.last_analysis_stats.suspicious }}</p>
+                        <p class="text-sm"><span class="font-semibold">Harmless:</span> {{ reputation.virustotal.last_analysis_stats.harmless }}</p>
+                    </div>
+                    <div>
+                        <h4 class="font-medium mb-2">AbuseIPDB</h4>
+                        <p class="text-sm"><span class="font-semibold">Abuse Score:</span> {{ reputation.abuseipdb.abuseConfidenceScore }}%</p>
+                        <p class="text-sm"><span class="font-semibold">Total Reports:</span> {{ reputation.abuseipdb.totalReports }}</p>
+                        <p class="text-sm"><span class="font-semibold">Last Reported:</span> {{ reputation.abuseipdb.lastReportedAt|default('Never') }}</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Recommendations -->
+        <section class="bg-white rounded-lg shadow p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">Recommendations</h2>
+            <div class="space-y-4">
+                <div class="flex items-start">
+                    <div class="flex-shrink-0 h-5 w-5 text-blue-500">•</div>
+                    <p class="ml-3 text-sm text-gray-700">Monitor for suspicious activity if abuse score is above 30%</p>
+                </div>
+                <div class="flex items-start">
+                    <div class="flex-shrink-0 h-5 w-5 text-blue-500">•</div>
+                    <p class="ml-3 text-sm text-gray-700">Review open ports and services if any were detected</p>
+                </div>
+                <div class="flex items-start">
+                    <div class="flex-shrink-0 h-5 w-5 text-blue-500">•</div>
+                    <p class="ml-3 text-sm text-gray-700">Consider implementing firewall rules if malicious activity is suspected</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="text-center text-sm text-gray-500 border-t pt-6">
+            <p>Report generated by EthicalIPRecon - For authorized security testing only</p>
+            <p class="mt-1">Unauthorized use against systems you don't own is illegal</p>
+        </footer>
+    </div>
+
+    <script>
+        // Initialize map if coordinates exist
+        const lat = parseFloat('{{ geoip.latitude|default(0) }}');
+        const lng = parseFloat('{{ geoip.longitude|default(0) }}');
+        const city = '{{ geoip.city|default("") }}';
+        const country = '{{ geoip.country|default("") }}';
+        
+        if (lat && lng) {
+            try {
+                const map = L.map('map').setView([lat, lng], 10);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(map);
+                
+                const marker = L.marker([lat, lng]).addTo(map);
+                if (city && country) {
+                    marker.bindPopup(`${city}, ${country}`).openPopup();
+                }
+            } catch (e) {
+                console.error('Map initialization failed:', e);
+            }
+        } else {
+            document.getElementById('map').innerHTML = 
+                '<div class="bg-gray-100 h-full flex items-center justify-center text-gray-500">' +
+                'No geographic data available</div>';
+        }
+    </script>
+</body>
+</html>
